@@ -485,31 +485,6 @@ select.form-input {
   <!-- ── INPUT FORM ── -->
   <div id="inputForm" style="display:none;">
 
-    <!-- Goals -->
-    <div class="multi-label">Pick your top 2 goals <span class="required-star">*</span></div>
-    <div class="form-row">
-      <div class="form-field">
-        <label class="form-label">#1 Most important goal <span class="required-star">*</span></label>
-        <select class="form-input" id="goal1" onchange="onInputChange()">
-          <option value="">Select your top goal…</option>
-          <option value="supplemental">💰 Supplemental Income</option>
-          <option value="replace">🚀 Replace My Day Job</option>
-          <option value="family">👨‍👩‍👧‍👦 Family Business</option>
-          <option value="scale">📈 Scale &amp; Sell</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label class="form-label">#2 Secondary goal <span class="required-star">*</span></label>
-        <select class="form-input" id="goal2" onchange="onInputChange()">
-          <option value="">Select your secondary goal…</option>
-          <option value="supplemental">💰 Supplemental Income</option>
-          <option value="replace">🚀 Replace My Day Job</option>
-          <option value="family">👨‍👩‍👧‍👦 Family Business</option>
-          <option value="scale">📈 Scale &amp; Sell</option>
-        </select>
-      </div>
-    </div>
-
     <!-- Desired Profit -->
     <div class="multi-label">Desired Monthly Take-Home Profit <span class="required-star">*</span></div>
     <p class="step-desc" style="margin-top:-4px;margin-bottom:12px;font-size:14px;">After expenses and restocking, what would you like to take home each month?</p>
@@ -527,7 +502,7 @@ select.form-input {
     <div class="multi-label">Your Recommended Number of Machines</div>
     <div class="rec-machines-box">
       <div class="rec-machines-num" id="recMachineNum">—</div>
-      <div class="rec-machines-label" id="recMachineLabel">Pick your goals and enter desired profit to see recommendation</div>
+      <div class="rec-machines-label" id="recMachineLabel">Enter your desired monthly profit above to see your recommendation</div>
     </div>
 
     <p class="info-box">💡 More machines isn't always better. Location quality and strategy matter more than count — and they're easier to manage.</p>
@@ -732,26 +707,11 @@ function lookupBlendedDPM(propVal, machVal, densityKey) {
   return FALLBACK_DPM;
 }
 
-// ─── RECOMMENDATION ENGINE (ported 1:1) ───
+// ─── RECOMMENDATION ENGINE ───
 const PROFIT_PER_MACHINE = 950;
-const GOAL_MACHINE_MAP = {
-  supplemental: 3,
-  replace: 9,
-  family: 11,
-  scale: 13,
-};
-const RANK_WEIGHTS = [3, 2];
-const GOAL_LABELS = {
-  supplemental: 'Supplemental Income',
-  replace: 'Replace Day Job',
-  family: 'Family Business',
-  scale: 'Scale & Sell',
-};
 
 // ─── STATE ───
 const state = {
-  goal1: null,
-  goal2: null,
   desiredProfit: null,
   recommendedMachines: null,
   leadData: null,  // { lead:{...}, density:..., properties:[...] }
@@ -792,7 +752,7 @@ function renderHeader(data) {
   document.getElementById('leadDesc').innerHTML =
     'We pulled <strong>' + properties.length + ' top-scoring properties</strong> within 15 miles of ' +
     (cityState ? cityState + ' (' + lead.zip + ')' : lead.zip) +
-    ' that match the strongest vending-fit profile. Pick your goals and target profit below to see your recommended route and projected ROI.';
+    ' that match the strongest vending-fit profile. Enter your target profit below to see your recommended route and projected ROI.';
 
   document.getElementById('leadHeader').style.display = 'block';
 }
@@ -815,59 +775,19 @@ function formatProfit(input) {
 //  RECOMMENDATION ALGORITHM (ported 1:1)
 // ══════════════════════════════════════════════════════════════════
 function computeRecommendedMachines() {
-  const goals = [state.goal1, state.goal2].filter(g => g);
   const desiredProfit = state.desiredProfit || 0;
+  if (desiredProfit <= 0) return null;
 
-  let goalBased = null;
-  let profitBased = null;
-
-  if (goals.length > 0) {
-    let weightedSum = 0;
-    let weightTotal = 0;
-    goals.forEach((g, i) => {
-      const w = RANK_WEIGHTS[i] || 1;
-      weightedSum += GOAL_MACHINE_MAP[g] * w;
-      weightTotal += w;
-    });
-    goalBased = weightedSum / weightTotal;
-  }
-
-  if (desiredProfit > 0) {
-    profitBased = desiredProfit / PROFIT_PER_MACHINE;
-  }
-
-  let recommended;
-  let label;
-  if (goalBased !== null && profitBased !== null) {
-    recommended = Math.round((goalBased + profitBased) / 2);
-    label = ' machines recommended (based on goals + desired profit)';
-  } else if (goalBased !== null) {
-    recommended = Math.round(goalBased);
-    label = ' machine' + (recommended > 1 ? 's' : '') + ' recommended (from goals)';
-  } else if (profitBased !== null) {
-    recommended = Math.round(profitBased);
-    label = ' machine' + (recommended > 1 ? 's' : '') + ' recommended (from desired profit)';
-  } else {
-    return null;
-  }
-
-  recommended = Math.max(1, recommended);
-  return { count: recommended, label: recommended + label };
+  const recommended = Math.max(1, Math.round(desiredProfit / PROFIT_PER_MACHINE));
+  const label = recommended + ' machine' + (recommended > 1 ? 's' : '') +
+                ' recommended (based on your desired profit)';
+  return { count: recommended, label: label };
 }
 
 // ══════════════════════════════════════════════════════════════════
 //  ON ANY INPUT CHANGE — RECALC EVERYTHING
 // ══════════════════════════════════════════════════════════════════
 function onInputChange() {
-  state.goal1 = document.getElementById('goal1').value || null;
-  state.goal2 = document.getElementById('goal2').value || null;
-
-  // Sync goals — prevent dupes
-  if (state.goal1 && state.goal2 && state.goal1 === state.goal2) {
-    document.getElementById('goal2').value = '';
-    state.goal2 = null;
-  }
-
   const rec = computeRecommendedMachines();
 
   const numEl = document.getElementById('recMachineNum');
@@ -875,9 +795,10 @@ function onInputChange() {
 
   if (!rec) {
     numEl.textContent = '—';
-    labelEl.textContent = 'Pick your goals and enter desired profit to see recommendation';
+    labelEl.textContent = 'Enter your desired monthly profit above to see your recommendation';
     state.recommendedMachines = null;
     hideResults();
+    scheduleCapture();
     return;
   }
 
@@ -885,15 +806,14 @@ function onInputChange() {
   numEl.textContent = rec.count;
   labelEl.textContent = rec.label;
 
-  // Reveal results once we have BOTH a goal AND a profit
-  const hasGoals = state.goal1 !== null;
-  const hasProfit = state.desiredProfit && state.desiredProfit > 0;
-
-  if (hasGoals && hasProfit) {
+  // Reveal results once profit has been entered (the only required input now)
+  if (state.desiredProfit && state.desiredProfit > 0) {
     showResults();
   } else {
     hideResults();
   }
+
+  scheduleCapture();
 }
 
 function hideResults() {
@@ -1003,7 +923,6 @@ function renderProjection() {
   const tags = [
     '<strong>' + machineCount + '</strong> machine' + (machineCount !== 1 ? 's' : ''),
     'Market: <strong>' + densityName + '</strong>',
-    state.goal1 ? 'Goal: <strong>' + (GOAL_LABELS[state.goal1] || state.goal1) + '</strong>' : '',
   ].filter(t => t).map(t => '<div class="proj-summary-tag">' + t + '</div>').join('');
   document.getElementById('projTags').innerHTML = tags;
 
@@ -1053,7 +972,85 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('inputForm').style.display = 'block';
   renderHeader(data);
+
+  // Prefill profit from URL param (so a "completed URL" reproduces
+  // the exact view the lead saw). Param: p
+  const params = new URLSearchParams(window.location.search);
+  const p = params.get('p');
+  if (p) {
+    const profitInput = document.getElementById('fnDesiredProfit');
+    profitInput.value = p;
+    formatProfit(profitInput);
+    onInputChange();  // trigger render with prefilled value
+  }
 });
+
+// ══════════════════════════════════════════════════════════════════
+//  ENGAGEMENT CAPTURE — POST to Apps Script web app, debounced 500ms
+// ══════════════════════════════════════════════════════════════════
+//
+// On any input change, we send the lead's current selections + a
+// "completed URL" back to the sheet. Debounced so dragging the profit
+// number doesn't spam the server.
+
+let _captureTimer = null;
+let _lastCaptureBody = null;  // dedupe identical successive captures
+
+function scheduleCapture() {
+  if (!state.leadData || !state.leadData.id || !state.leadData.sig) return;
+  if (!state.leadData.wa) return;  // no web app URL configured — silently skip
+  if (!state.desiredProfit) return;  // nothing to capture
+
+  if (_captureTimer) clearTimeout(_captureTimer);
+  _captureTimer = setTimeout(sendCapture, 500);
+}
+
+function sendCapture() {
+  const data = state.leadData;
+  const completedUrl = buildCompletedUrl();
+
+  // goal1/goal2 are kept in the payload (always null) so the Apps Script's
+  // doPost can still blank-out the corresponding sheet columns. The columns
+  // themselves remain in the schema for backward compat.
+  const body = {
+    id:            data.id,
+    sig:           data.sig,
+    goal1:         null,
+    goal2:         null,
+    profit:        state.desiredProfit || null,
+    machines:      state.recommendedMachines || null,
+    completedUrl:  completedUrl,
+  };
+
+  // Dedupe identical successive captures
+  const bodyKey = JSON.stringify(body);
+  if (bodyKey === _lastCaptureBody) return;
+  _lastCaptureBody = bodyKey;
+
+  // Fire-and-forget — we don't surface errors to the lead
+  // Apps Script web apps require text/plain to avoid CORS preflight issues.
+  fetch(data.wa, {
+    method: 'POST',
+    mode: 'no-cors',  // Apps Script doesn't return CORS headers; opaque response is fine
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: bodyKey,
+  }).catch(function(e) {
+    console.warn('Capture POST failed:', e);
+    // Don't reset _lastCaptureBody — let the next change retry
+  });
+}
+
+function buildCompletedUrl() {
+  // Take the current URL, append/replace the p param
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+  if (state.desiredProfit) params.set('p', String(state.desiredProfit));
+  else params.delete('p');
+  // Strip any legacy g1/g2 params (no longer used)
+  params.delete('g1');
+  params.delete('g2');
+  return url.toString();
+}
 </script>
 
 </body>
