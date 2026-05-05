@@ -927,35 +927,29 @@ function renderProperties() {
     (cityState ? cityState + ' (' + data.lead.zip + ')' : data.lead.zip) +
     ' — classified as <strong>' + densityName + '</strong>';
 
+  // Pre-compute monthly revenue for display
+  const revs = slice.map(p => getMonthlyRevForProp(p, data.density));
+
+  // Fixed dataset max — the highest possible monthly revenue across all
+  // bucket/density combos (apartment in city ~$2,343/mo). Using a constant
+  // means a $1,100/mo gym always shows the same % regardless of what else
+  // is in the list.
+  const MAX_MONTHLY_REV = 2400;
+
   const list = document.getElementById('propertyList');
   list.innerHTML = slice.map((p, i) => {
     const typeLabel  = PROPERTY_LABELS[p.t] || p.t;
     const score      = Math.round(p.s);
     const scoreClass = score >= 70 ? '' : score >= 40 ? 'mid' : 'low';
-    const monthlyRev = getMonthlyRevForProp(p, data.density);
+    const monthlyRev = revs[i];
 
-    // Use stored components if available (new URLs from updated Code.gs).
-    // Fall back gracefully for old URLs that don't have them.
-    const hasComponents = (p.rv != null && p.rt != null && p.dp != null && p.px != null);
+    // ROI Potential = this property's revenue as % of dataset max ($2,400/mo)
+    const roiPct = Math.min(100, Math.round((monthlyRev / MAX_MONTHLY_REV) * 100));
 
-    // Each bar is 0–100 where 100 = max possible for that category.
-    // DPM is normalized against MAX_DPM_NORM (21) so bars spread meaningfully.
-    // rv/rt/px are already 0–100 as stored.
-    // For DPM we re-normalize stored dp (0–100, normed against 35 in Code.gs)
-    // to be against 21 so the bar looks right on screen.
-    let rvPct, rtPct, dpPct, pxPct;
-    if (hasComponents) {
-      rvPct = p.rv;  // already 0–100
-      rtPct = p.rt;
-      dpPct = Math.min(100, Math.round(p.dp * (35 / MAX_DPM_NORM)));  // rescale to 21-max
-      pxPct = p.px;
-    } else {
-      // Legacy fallback: can only show DPM (from type+density), rest unknown
-      const dpmTable = SCORE_BUCKET_DPM[p.t] || SCORE_BUCKET_DPM['other'];
-      const dpm = (dpmTable[data.density] || dpmTable['city'] || 6);
-      dpPct = Math.min(100, Math.round((dpm / MAX_DPM_NORM) * 100));
-      rvPct = rtPct = pxPct = null;
-    }
+    // Reviews and Rating from stored components (new URLs) or fallback
+    const hasComponents = (p.rv != null && p.rt != null);
+    const rvPct = hasComponents ? p.rv : null;
+    const rtPct = hasComponents ? p.rt : null;
 
     const bar = (pct, cls) => pct != null
       ? `<div class="score-bar-track"><div class="score-bar-fill ${cls}" style="width:${pct}%"></div></div><div class="score-bar-pct">${pct}%</div>`
@@ -971,7 +965,7 @@ function renderProperties() {
           <div class="score-breakdown">
             <div class="score-bar-item">
               <div class="score-bar-label">ROI Potential</div>
-              ${bar(dpPct, 'dpm')}
+              ${bar(roiPct, 'dpm')}
             </div>
             <div class="score-bar-item">
               <div class="score-bar-label">Reviews</div>
@@ -980,10 +974,6 @@ function renderProperties() {
             <div class="score-bar-item">
               <div class="score-bar-label">Rating</div>
               ${bar(rtPct, 'rating')}
-            </div>
-            <div class="score-bar-item">
-              <div class="score-bar-label">Proximity</div>
-              ${bar(pxPct, 'prox')}
             </div>
           </div>
         </div>
