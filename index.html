@@ -899,25 +899,7 @@ const SCORE_BUCKET_DPM = {
   'manufacturing-warehouse': { major:21.08, city:11.98, suburban:19.20,rural:34.73 },
   'other':                   { major:7.59,  city:15.80, suburban:6.34, rural:6.00 },
 };
-const MAX_DPM_NORM = 35;
-
-function getScoreComponents(prop, density) {
-  // DPM component — exact, computable from type + density
-  const dpmTable = SCORE_BUCKET_DPM[prop.t] || SCORE_BUCKET_DPM['other'];
-  const dpm = dpmTable[density] || dpmTable['city'] || 6;
-  const dpmNorm = Math.min(dpm / MAX_DPM_NORM, 1);
-  const dpmContrib = dpmNorm * 25;  // 25% weight → 0–25 points
-
-  // Total score is stored as prop.s (0–100)
-  // The remaining 75 points come from reviews + rating + proximity
-  const popularityContrib = Math.max(0, prop.s - dpmContrib);
-
-  return {
-    dpm: dpmContrib,           // 0–25
-    popularity: popularityContrib,  // 0–75 (reviews 25 + rating 25 + proximity 25)
-    dpmRaw: dpm,
-  };
-}
+const MAX_DPM_NORM = 21;  // actual max DPM in dataset — spreads bars meaningfully
 
 function getMonthlyRevForProp(prop, density) {
   const machine = DEFAULT_MACHINE_BY_PROP[prop.t] || 'snacks-drinks-ai';
@@ -950,12 +932,34 @@ function renderProperties() {
     const typeLabel  = PROPERTY_LABELS[p.t] || p.t;
     const score      = Math.round(p.s);
     const scoreClass = score >= 70 ? '' : score >= 40 ? 'mid' : 'low';
-    const comps      = getScoreComponents(p, data.density);
     const monthlyRev = getMonthlyRevForProp(p, data.density);
 
-    // Bar widths (percentage of their max possible contribution)
-    const dpmPct        = Math.round((comps.dpm / 25) * 100);
-    const popularityPct = Math.round((comps.popularity / 75) * 100);
+    // Use stored components if available (new URLs from updated Code.gs).
+    // Fall back gracefully for old URLs that don't have them.
+    const hasComponents = (p.rv != null && p.rt != null && p.dp != null && p.px != null);
+
+    // Each bar is 0–100 where 100 = max possible for that category.
+    // DPM is normalized against MAX_DPM_NORM (21) so bars spread meaningfully.
+    // rv/rt/px are already 0–100 as stored.
+    // For DPM we re-normalize stored dp (0–100, normed against 35 in Code.gs)
+    // to be against 21 so the bar looks right on screen.
+    let rvPct, rtPct, dpPct, pxPct;
+    if (hasComponents) {
+      rvPct = p.rv;  // already 0–100
+      rtPct = p.rt;
+      dpPct = Math.min(100, Math.round(p.dp * (35 / MAX_DPM_NORM)));  // rescale to 21-max
+      pxPct = p.px;
+    } else {
+      // Legacy fallback: can only show DPM (from type+density), rest unknown
+      const dpmTable = SCORE_BUCKET_DPM[p.t] || SCORE_BUCKET_DPM['other'];
+      const dpm = (dpmTable[data.density] || dpmTable['city'] || 6);
+      dpPct = Math.min(100, Math.round((dpm / MAX_DPM_NORM) * 100));
+      rvPct = rtPct = pxPct = null;
+    }
+
+    const bar = (pct, cls) => pct != null
+      ? `<div class="score-bar-track"><div class="score-bar-fill ${cls}" style="width:${pct}%"></div></div><div class="score-bar-pct">${pct}%</div>`
+      : `<div class="score-bar-track"><div class="score-bar-fill ${cls}" style="width:0%"></div></div><div class="score-bar-pct">—</div>`;
 
     return `
       <div class="property-card">
@@ -967,13 +971,19 @@ function renderProperties() {
           <div class="score-breakdown">
             <div class="score-bar-item">
               <div class="score-bar-label">ROI Potential</div>
-              <div class="score-bar-track"><div class="score-bar-fill dpm" style="width:${dpmPct}%"></div></div>
-              <div class="score-bar-pct">${Math.round(comps.dpm)}/25</div>
+              ${bar(dpPct, 'dpm')}
             </div>
             <div class="score-bar-item">
-              <div class="score-bar-label">Popularity</div>
-              <div class="score-bar-track"><div class="score-bar-fill reviews" style="width:${popularityPct}%"></div></div>
-              <div class="score-bar-pct">${Math.round(comps.popularity)}/75</div>
+              <div class="score-bar-label">Reviews</div>
+              ${bar(rvPct, 'reviews')}
+            </div>
+            <div class="score-bar-item">
+              <div class="score-bar-label">Rating</div>
+              ${bar(rtPct, 'rating')}
+            </div>
+            <div class="score-bar-item">
+              <div class="score-bar-label">Proximity</div>
+              ${bar(pxPct, 'prox')}
             </div>
           </div>
         </div>
