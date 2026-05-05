@@ -512,7 +512,7 @@ select.form-input {
   <div class="results-section" id="resultsSection">
     <div class="multi-label">Top Properties Near You</div>
     <p class="step-desc" style="margin-top:-4px;margin-bottom:14px;font-size:14px;">
-      Here are your top <strong id="propCountText">—</strong> highest-scoring properties within 15 miles, ranked by vending fit.
+      Here are your top <strong id="propCountText">—</strong> highest-scoring properties within 15 miles, ranked by proximity, daily visitors, popularity, and ROI projection.
     </p>
     <div class="location-summary" id="locationSummary"></div>
     <div id="propertyList"></div>
@@ -708,7 +708,7 @@ function lookupBlendedDPM(propVal, machVal, densityKey) {
 }
 
 // ─── RECOMMENDATION ENGINE ───
-const PROFIT_PER_MACHINE = 950;
+const PROFIT_PER_MACHINE = 600;
 
 // ─── STATE ───
 const state = {
@@ -748,9 +748,9 @@ function renderHeader(data) {
   document.getElementById('leadEyebrow').textContent =
     'Custom Route — ' + (cityState || lead.zip);
   document.getElementById('leadTitle').textContent =
-    'Your top ' + properties.length + ' vending opportunities near ' + (cityState || lead.zip);
+    'Your top vending opportunities near ' + (cityState || lead.zip);
   document.getElementById('leadDesc').innerHTML =
-    'We pulled <strong>' + properties.length + ' top-scoring properties</strong> within 15 miles of ' +
+    'We pulled <strong>' + ' top-scoring properties</strong> within 15 miles of ' +
     (cityState ? cityState + ' (' + lead.zip + ')' : lead.zip) +
     ' that match the strongest vending-fit profile. Enter your target profit below to see your recommended route and projected ROI.';
 
