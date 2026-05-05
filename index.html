@@ -271,6 +271,56 @@ select.form-input {
   }
 }
 
+/* ─── SCORE BREAKDOWN ─── */
+.score-breakdown {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.score-bar-item {
+  flex: 1;
+  min-width: 48px;
+}
+.score-bar-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-mid);
+  margin-bottom: 3px;
+  text-align: center;
+}
+.score-bar-track {
+  height: 5px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.score-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--primary);
+}
+.score-bar-fill.reviews { background: #6BCFF0; }
+.score-bar-fill.rating  { background: #1F9AC5; }
+.score-bar-fill.dpm     { background: #0D5E78; }
+.score-bar-fill.prox    { background: #A2F2D4; }
+.score-bar-pct {
+  font-size: 9px;
+  color: var(--text-light);
+  text-align: center;
+  margin-top: 2px;
+}
+
+/* ─── PER-LOCATION REVENUE ─── */
+.property-rev {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin-top: 4px;
+}
+
 /* ─── PROJECTION ─── */
 .projection-section {
   display: none;
@@ -512,7 +562,7 @@ select.form-input {
   <div class="results-section" id="resultsSection">
     <div class="multi-label">Top Properties Near You</div>
     <p class="step-desc" style="margin-top:-4px;margin-bottom:14px;font-size:14px;">
-      Here are your top <strong id="propCountText">—</strong> highest-scoring properties within 15 miles, ranked by proximity, daily visitors, popularity, and ROI projection.
+      Here are your top <strong id="propCountText">—</strong> highest-scoring properties within 15 miles, ranked by vending fit.
     </p>
     <div class="location-summary" id="locationSummary"></div>
     <div id="propertyList"></div>
@@ -748,9 +798,9 @@ function renderHeader(data) {
   document.getElementById('leadEyebrow').textContent =
     'Custom Route — ' + (cityState || lead.zip);
   document.getElementById('leadTitle').textContent =
-    'Your top vending opportunities near ' + (cityState || lead.zip);
+    'Your top ' + properties.length + ' vending opportunities near ' + (cityState || lead.zip);
   document.getElementById('leadDesc').innerHTML =
-    'We pulled <strong>' + ' top-scoring properties</strong> within 15 miles of ' +
+    'We pulled <strong>' + properties.length + ' top-scoring properties</strong> within 15 miles of ' +
     (cityState ? cityState + ' (' + lead.zip + ')' : lead.zip) +
     ' that match the strongest vending-fit profile. Enter your target profit below to see your recommended route and projected ROI.';
 
@@ -832,6 +882,52 @@ function showResults() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+//  SCORE BREAKDOWN HELPERS
+// ══════════════════════════════════════════════════════════════════
+// These mirror the scoring weights in Code.gs exactly.
+// We can only reconstruct DPM from the payload (type + density).
+// Reviews, rating, and proximity are combined into "popularity" since
+// they're not stored individually in the URL payload.
+
+const SCORE_BUCKET_DPM = {
+  'apartment':               { major:6.85,  city:8.36,  suburban:6.68, rural:6.73 },
+  'gym':                     { major:5.72,  city:10.34, suburban:8.29, rural:6.38 },
+  'office-gov':              { major:12.95, city:11.73, suburban:4.32, rural:7.58 },
+  'hotel':                   { major:9.00,  city:9.00,  suburban:9.00, rural:11.48 },
+  'medical':                 { major:18.20, city:11.47, suburban:7.00, rural:7.00 },
+  'school':                  { major:9.90,  city:9.90,  suburban:8.42, rural:6.96 },
+  'manufacturing-warehouse': { major:21.08, city:11.98, suburban:19.20,rural:34.73 },
+  'other':                   { major:7.59,  city:15.80, suburban:6.34, rural:6.00 },
+};
+const MAX_DPM_NORM = 35;
+
+function getScoreComponents(prop, density) {
+  // DPM component — exact, computable from type + density
+  const dpmTable = SCORE_BUCKET_DPM[prop.t] || SCORE_BUCKET_DPM['other'];
+  const dpm = dpmTable[density] || dpmTable['city'] || 6;
+  const dpmNorm = Math.min(dpm / MAX_DPM_NORM, 1);
+  const dpmContrib = dpmNorm * 25;  // 25% weight → 0–25 points
+
+  // Total score is stored as prop.s (0–100)
+  // The remaining 75 points come from reviews + rating + proximity
+  const popularityContrib = Math.max(0, prop.s - dpmContrib);
+
+  return {
+    dpm: dpmContrib,           // 0–25
+    popularity: popularityContrib,  // 0–75 (reviews 25 + rating 25 + proximity 25)
+    dpmRaw: dpm,
+  };
+}
+
+function getMonthlyRevForProp(prop, density) {
+  const machine = DEFAULT_MACHINE_BY_PROP[prop.t] || 'snacks-drinks-ai';
+  const units   = DEFAULT_DENOM[prop.t] || 150;
+  let dpm = lookupBlendedDPM(prop.t, machine, density);
+  if (density === 'city') dpm *= 1.15;  // same city multiplier as projection
+  return dpm * units;
+}
+
+// ══════════════════════════════════════════════════════════════════
 //  RENDER PROPERTY LIST
 // ══════════════════════════════════════════════════════════════════
 function renderProperties() {
@@ -851,15 +947,35 @@ function renderProperties() {
 
   const list = document.getElementById('propertyList');
   list.innerHTML = slice.map((p, i) => {
-    const typeLabel = PROPERTY_LABELS[p.t] || p.t;
-    const score = Math.round(p.s);
+    const typeLabel  = PROPERTY_LABELS[p.t] || p.t;
+    const score      = Math.round(p.s);
     const scoreClass = score >= 70 ? '' : score >= 40 ? 'mid' : 'low';
+    const comps      = getScoreComponents(p, data.density);
+    const monthlyRev = getMonthlyRevForProp(p, data.density);
+
+    // Bar widths (percentage of their max possible contribution)
+    const dpmPct        = Math.round((comps.dpm / 25) * 100);
+    const popularityPct = Math.round((comps.popularity / 75) * 100);
+
     return `
       <div class="property-card">
         <div class="property-num">${i + 1}</div>
         <div class="property-body">
           <div class="property-name">${escapeHtml(p.n)}</div>
           <div class="property-address">${escapeHtml(p.a)}</div>
+          <div class="property-rev">~$${Math.round(monthlyRev).toLocaleString()}/mo projected revenue</div>
+          <div class="score-breakdown">
+            <div class="score-bar-item">
+              <div class="score-bar-label">ROI Potential</div>
+              <div class="score-bar-track"><div class="score-bar-fill dpm" style="width:${dpmPct}%"></div></div>
+              <div class="score-bar-pct">${Math.round(comps.dpm)}/25</div>
+            </div>
+            <div class="score-bar-item">
+              <div class="score-bar-label">Popularity</div>
+              <div class="score-bar-track"><div class="score-bar-fill reviews" style="width:${popularityPct}%"></div></div>
+              <div class="score-bar-pct">${Math.round(comps.popularity)}/75</div>
+            </div>
+          </div>
         </div>
         <div class="property-badges">
           <div class="property-type-badge">${escapeHtml(typeLabel)}</div>
@@ -904,6 +1020,13 @@ function renderProjection() {
     const dpm = lookupBlendedDPM(p.property, p.machine, data.density);
     totalMonthlyRev += dpm * p.units;
   });
+
+  // City density gets a 1.15× multiplier to account for the gap between
+  // 'city' and 'major' in the DPM tables (mid-range markets between suburban and major)
+  if (data.density === 'city') {
+    totalMonthlyRev *= 1.15;
+  }
+
   totalMonthlyRev = Math.round(totalMonthlyRev);
 
   const annualRev = totalMonthlyRev * 12;
